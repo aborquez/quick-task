@@ -1,5 +1,5 @@
-#ifndef AliAnalysisQuickTask_H
-#define AliAnalysisQuickTask_H
+#ifndef ALIANALYSISQUICKTASK_H
+#define ALIANALYSISQUICKTASK_H
 
 #ifndef ALIANALYSISTASKSE_H
 #include "AliAnalysisTaskSE.h"
@@ -49,69 +49,58 @@ class AliPIDResponse;
 class AliAnalysisQuickTask : public AliAnalysisTaskSE {
    public:
     AliAnalysisQuickTask();
-    AliAnalysisQuickTask(const char* name, Bool_t IsMC);
+    AliAnalysisQuickTask(const char* name);
     virtual ~AliAnalysisQuickTask();
 
-   public:
     virtual void UserCreateOutputObjects();
     void PrepareTracksHistograms();
     virtual void UserExec(Option_t* option);
     virtual void Terminate(Option_t* option) { return; }
 
-   public:
     /* MC Generated */
     void ProcessMCGen();
 
-   public:
     /* Cuts */
     void DefineTracksCuts(TString cuts_option);
 
-   public:
     /* Tracks */
     void ProcessTracks();
     Bool_t PassesTrackSelection(AliESDtrack* track);
     void PlotStatus(AliESDtrack* track);
 
    private:
-    /* Input options */
-    Bool_t fIsMC;                    //
-
-   private:
     /* AliRoot objects */
-    AliMCEvent* fMC;                // MC event
-    AliVVertex* fMC_PrimaryVertex;  // MC gen. (or true) primary vertex
-    AliESDEvent* fESD;              // reconstructed event
-    AliPIDResponse* fPIDResponse;   // pid response object
-    AliESDVertex* fPrimaryVertex;   // primary vertex
-    Double_t fMagneticField;        // magnetic field
+    AliMCEvent* fMC;                //! MC event
+    AliVVertex* fMC_PrimaryVertex;  //! MC gen. (or true) primary vertex
+    AliESDEvent* fESD;              //! reconstructed event
+    AliPIDResponse* fPIDResponse;   //! pid response object
+    AliESDVertex* fPrimaryVertex;   //! primary vertex
+    Double_t fMagneticField;        //! magnetic field
 
-   private:
     /* ROOT objects */
-    TList* fOutputListOfHists;
+    TList* fOutputListOfHists;  //!
 
-   private:
     /* Tracks Histograms */
-    TH1F* fHist_Tracks_Eta;
-    TH1F* fHist_Tracks_Status;
+    TH1F* fHist_Tracks_NSigmasProton;  //!
+    TH1F* fHist_Tracks_Eta;            //!
+    TH1F* fHist_Tracks_Status;         //!
 
-   private:
     /* Containers -- vectors and hash tables */
-    std::unordered_map<Int_t, Int_t> getPdgCode_fromMcIdx;                    //
+    std::unordered_map<Int_t, Int_t> getPdgCode_fromMcIdx;  //
 
-   private:
-    /*** Cuts ***/
-
-    /* Track selection */
-    Float_t kMin_Track_P;
-    Float_t kMax_Track_P;
-    Float_t kMax_Track_Eta;
-    Float_t kMin_Track_NTPCClusters;
-    Float_t kMax_Track_Chi2PerNTPCClusters;
+    /* Cuts -- Track selection */
+    Float_t kMin_Track_P;                    //
+    Float_t kMax_Track_P;                    //
+    Float_t kMax_Track_Eta;                  //
+    Float_t kMin_Track_NTPCClusters;         //
+    Float_t kMax_Track_Chi2PerNTPCClusters;  //
 
     AliAnalysisQuickTask(const AliAnalysisQuickTask&);             // not implemented
     AliAnalysisQuickTask& operator=(const AliAnalysisQuickTask&);  // not implemented
 
-    ClassDef(AliAnalysisQuickTask, 1);
+    /// \cond CLASSDEF
+    ClassDef(AliAnalysisQuickTask, 6);
+    /// \endcond
 };
 
 #endif

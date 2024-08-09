@@ -2,78 +2,117 @@
 #include "TROOT.h"
 #include "TSystem.h"
 
+#include "AliAnalysisAlien.h"
 #include "AliAnalysisManager.h"
-#include "AliAnalysisTaskPIDResponse.h"
 #include "AliESDInputHandler.h"
 #include "AliMCEventHandler.h"
 
+#include "AliAnalysisTaskPIDResponse.h"
+#include "AliMultSelectionTask.h"
+#include "AliPhysicsSelectionTask.h"
+
 #include "AliAnalysisQuickTask.h"
 
-void runAnalysis(Bool_t IsMC, TString RunPeriod, Int_t ChooseNEvents = 0) {
+void runAnalysis(Int_t ChooseNEvents = 0) {
 
-    // tell root where to look for headers
-    gInterpreter->ProcessLine(".include ${ROOTSYS}/include");
-    gInterpreter->ProcessLine(".include ${ALICE_ROOT}/include");
-    gInterpreter->ProcessLine(".include ${ALICE_PHYSICS}/include");
+    const Bool_t IS_MC = kTRUE;
+    const Int_t N_PASS = 3;  // TEST
 
-    // create the analysis manager
-    AliAnalysisManager *mgr = new AliAnalysisManager("AnalysisTaskExample");
+    gInterpreter->ProcessLine(".include $ROOTSYS/include");
+    gInterpreter->ProcessLine(".include $ALICE_ROOT/include");
+
+    Bool_t local = kFALSE;    // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
+    Bool_t gridTest = kTRUE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
+
+    AliAnalysisManager *mgr = new AliAnalysisManager("AnalysisManager_QuickTask");
+
+    /* Grid Connection */
+
+    AliAnalysisAlien *alienHandler;
+
+    if (!local) {
+        alienHandler = new AliAnalysisAlien();
+        alienHandler->SetCheckCopy(kFALSE);
+        alienHandler->AddIncludePath("-I. -I$ROOTSYS/include -I$ALICE_ROOT -I$ALICE_ROOT/include -I$ALICE_PHYSICS/include");
+        alienHandler->SetAdditionalLibs("AliAnalysisQuickTask.cxx AliAnalysisQuickTask.h");
+        alienHandler->SetAnalysisSource("AliAnalysisQuickTask.cxx");
+        alienHandler->SetAliPhysicsVersion("vAN-20240807_O2-1");
+        alienHandler->SetExecutableCommand("aliroot -l -q -b");
+        alienHandler->SetGridDataDir("/alice/sim/2020/LHC20e3a/");
+        if (!IS_MC) alienHandler->SetRunPrefix("000");
+        alienHandler->AddRunNumber(296749);
+        alienHandler->SetDataPattern("/*/AliESDs.root");
+        alienHandler->SetSplitMaxInputFileNumber(40);
+        alienHandler->SetTTL(3600);
+        alienHandler->SetOutputToRunNo(kTRUE);
+        alienHandler->SetKeepLogs(kTRUE);
+        alienHandler->SetMergeViaJDL(kFALSE);
+        // alienHandler->SetMaxMergeStages(1);
+        alienHandler->SetGridWorkingDir("TEST_WorkingDir");
+        alienHandler->SetGridOutputDir("TEST_OutputDir");
+        alienHandler->SetJDLName("QuickTask.jdl");
+        alienHandler->SetExecutable("QuickTask.sh");
+        mgr->SetGridHandler(alienHandler);
+    }
+
+    /* Input Handlers */
 
     AliESDInputHandler *esdH = new AliESDInputHandler();
-    mgr->SetInputEventHandler(esdH);
     esdH->SetNeedField();  // necessary to get GoldenChi2
+    mgr->SetInputEventHandler(esdH);
 
-    AliMCEventHandler *mcHand = new AliMCEventHandler();
-    mgr->SetMCtruthEventHandler(mcHand);
+    AliMCEventHandler *mcH = new AliMCEventHandler();
+    mcH->SetReadTR(kFALSE);
+    mgr->SetMCtruthEventHandler(mcH);
 
-    // choose options depending on data period
-    Int_t n_pass;
-    if (RunPeriod == "LHC15o") {
-        n_pass = 2;
-    } else if (RunPeriod == "LHC18q" || RunPeriod == "LHC18r") {
-        n_pass = 3;
-    } else {
-        printf("Data period not recognized");
-        return;
-    }
+    /* Add Helper Tasks */
 
-    // CDB CONNECT
-    /*
-    // - to use this, one needs to clone https://gitlab.cern.ch/alisw/AliRootOCDB
-    // - then, one needs to set the environment variable ALIROOT_OCDB_ROOT to the directory where the repo is cloned
-    AliTaskCDBconnect *taskCDB = reinterpret_cast<AliTaskCDBconnect *>(
-        gInterpreter->ExecuteMacro("${ALICE_PHYSICS}/PWGPP/PilotTrain/AddTaskCDBconnect.C(\"local://${ALIROOT_OCDB_ROOT}/OCDB\")"));
-    taskCDB->SetFallBackToRaw(kTRUE);
-    */
+    TString TaskPIDResponse_Options = Form("(%i, 1, 1, %i)", (Int_t)IS_MC, N_PASS);
+    AliAnalysisTaskPIDResponse *TaskPIDResponse = reinterpret_cast<AliAnalysisTaskPIDResponse *>(
+        gInterpreter->ExecuteMacro("$ALICE_ROOT/ANALYSIS/macros/AddTaskPIDResponse.C" + TaskPIDResponse_Options));
+    if (!TaskPIDResponse) return;
 
-    // load PID task
-    TString pid_response_path = gSystem->ExpandPathName("${ALICE_ROOT}/ANALYSIS/macros/AddTaskPIDResponse.C");
-    AliAnalysisTaskPIDResponse *PIDresponseTask = reinterpret_cast<AliAnalysisTaskPIDResponse *>(
-        gInterpreter->ExecuteMacro(Form("%s(%i, 1, 1, \"%i\")", pid_response_path.Data(), (Int_t)IsMC, n_pass)));
+    TString TaskPhysicsSelection_Options = Form("(%i)", (Int_t)IS_MC);
+    AliPhysicsSelectionTask *TaskPhysicsSelection = reinterpret_cast<AliPhysicsSelectionTask *>(
+        gInterpreter->ExecuteMacro("$ALICE_PHYSICS/OADB/macros/AddTaskPhysicsSelection.C" + TaskPhysicsSelection_Options));
+    if (!TaskPhysicsSelection) return;
 
-    // load task
+    TString TaskMultSelection_Options = "";  // no options yet
+    AliMultSelectionTask *TaskMultSelection = reinterpret_cast<AliMultSelectionTask *>(
+        gInterpreter->ExecuteMacro("$ALICE_PHYSICS/OADB/COMMON/MULTIPLICITY/macros/AddTaskMultSelection.C" + TaskMultSelection_Options));
+    if (!TaskMultSelection) return;
+
+    /* Add My Task */
+
     gInterpreter->LoadMacro("AliAnalysisQuickTask.cxx++g");
-    AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(
-        gInterpreter->ExecuteMacro(Form("AddTask_QuickTask.C(\"name\", %i)", (Int_t)IsMC)));
 
-    if (!mgr->InitAnalysis()) {
-        return;
-    }
+    AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(gInterpreter->ExecuteMacro("AddTask_QuickTask.C"));
+    if (!task) return;
 
-    // print info on screen
-    mgr->SetDebugLevel(3);
-    mgr->PrintStatus();
+    /* Init Analysis Manager */
 
-    // if you want to run locally, we need to define some input
-    TChain *chain = new TChain("esdTree");
-    // add a few files to the chain (change this so that your local files are added)
-    chain->Add("AliESDs.root");
+    if (!mgr->InitAnalysis()) return;
 
-    if (!ChooseNEvents) {
-        // read all events
-        mgr->StartAnalysis("local", chain);
+    /* Start Analysis */
+
+    if (!local) {
+        if (gridTest) {
+            alienHandler->SetNtestFiles(5);
+            alienHandler->SetRunMode("test");
+        } else {
+            alienHandler->SetRunMode("full");
+        }
+        mgr->StartAnalysis("grid");
     } else {
-        // read the first NEvents
-        mgr->StartAnalysis("local", chain, ChooseNEvents);
+        TChain *chain = new TChain("esdTree");
+        if (!ChooseNEvents) {
+            std::vector<TString> localFiles = {"/home/ceres/borquez/some/sims/LHC20e3a/297595/001/AliESDs.root"};
+            for (Int_t ifile = 0; ifile < (Int_t)localFiles.size(); ifile++) {
+                chain->AddFile(localFiles[ifile]);
+            }
+            mgr->StartAnalysis("local", chain);  // read all events
+        } else {
+            mgr->StartAnalysis("local", chain, ChooseNEvents);  // read first NEvents
+        }
     }
 }

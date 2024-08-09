@@ -7,21 +7,23 @@ ClassImp(AliAnalysisQuickTask);
 */
 AliAnalysisQuickTask::AliAnalysisQuickTask()
     : AliAnalysisTaskSE(),
-      fIsMC(0),
+      //   fIsMC(0),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
       fPIDResponse(0),
       kMax_Track_Eta(0.),
       kMin_Track_NTPCClusters(0.),
-      kMax_Track_Chi2PerNTPCClusters(0.) {}
+      kMax_Track_Chi2PerNTPCClusters(0.) {
+    //
+}
 
 /*
  Constructor, called locally.
 */
-AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name, Bool_t IsMC)
+AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
     : AliAnalysisTaskSE(name),
-      fIsMC(IsMC),
+      //   fIsMC(0),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
@@ -37,9 +39,7 @@ AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name, Bool_t IsMC)
  Destructor.
 */
 AliAnalysisQuickTask::~AliAnalysisQuickTask() {
-    if (fOutputListOfHists) {
-        delete fOutputListOfHists;
-    }
+    if (fOutputListOfHists) delete fOutputListOfHists;
 }
 
 /*
@@ -50,21 +50,19 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     /** Add mandatory routines **/
 
     AliAnalysisManager* man = AliAnalysisManager::GetAnalysisManager();
-    if (!man) {
-        AliFatal("ERROR: AliAnalysisManager couldn't be found.");
-    }
+    if (!man) AliFatal("ERROR: AliAnalysisManager couldn't be found.");
 
     AliESDInputHandler* inputHandler = (AliESDInputHandler*)(man->GetInputEventHandler());
-    if (!inputHandler) {
-        AliFatal("ERROR: AliESDInputHandler couldn't be found.");
-    }
-
+    if (!inputHandler) AliFatal("ERROR: AliESDInputHandler couldn't be found.");
     fPIDResponse = inputHandler->GetPIDResponse();
 
     /** Prepare output histograms */
 
     fOutputListOfHists = new TList();
     fOutputListOfHists->SetOwner(kTRUE);
+
+    fHist_Tracks_NSigmasProton = new TH1F("NSigmasProton", "", 100, -4, 4);
+    fOutputListOfHists->Add(fHist_Tracks_NSigmasProton);
 
     fHist_Tracks_Eta = new TH1F("Eta", "", 100, -0.8, 0.8);
     fOutputListOfHists->Add(fHist_Tracks_Eta);
@@ -82,19 +80,20 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
 */
 void AliAnalysisQuickTask::UserExec(Option_t*) {
 
-    fMC = MCEvent();
-
-    if (!fMC) {
-        AliFatal("ERROR: AliMCEvent couldn't be found.");
+    Bool_t MB = (fInputHandler->IsEventSelected() & AliVEvent::kINT7);
+    if (!MB) {
+        AliInfoF("!! Event Rejected -- %u & %u = %u !!", fInputHandler->IsEventSelected(), AliVEvent::kINT7, MB);
+        return;
     }
+    AliInfoF("!! Event Accepted -- %u & %u = %u !!", fInputHandler->IsEventSelected(), AliVEvent::kINT7, MB);
+
+    fMC = MCEvent();
+    if (!fMC) AliFatal("ERROR: AliMCEvent couldn't be found.");
 
     fMC_PrimaryVertex = const_cast<AliVVertex*>(fMC->GetPrimaryVertex());
 
     fESD = dynamic_cast<AliESDEvent*>(InputEvent());
-
-    if (!fESD) {
-        AliFatal("ERROR: AliESDEvent couldn't be found.");
-    }
+    if (!fESD) AliFatal("ERROR: AliESDEvent couldn't be found.");
 
     fMagneticField = fESD->GetMagneticField();
 
@@ -102,7 +101,8 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
 
     DefineTracksCuts("");
 
-    if (fIsMC) ProcessMCGen();
+    // if (fIsMC)
+    ProcessMCGen();
 
     ProcessTracks();
 
@@ -117,7 +117,6 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
  - Input: `cuts_option`
 */
 void AliAnalysisQuickTask::DefineTracksCuts(TString cuts_option) {
-
     kMin_Track_P = 1.;
     kMax_Track_P = 2.;
     kMax_Track_Eta = 0.8;
@@ -161,10 +160,6 @@ void AliAnalysisQuickTask::ProcessTracks() {
     Float_t impar_pv[2], dca_wrt_pv;
     Float_t n_tpc_clusters;
     Float_t chi2_over_nclusters;
-    Float_t n_sigma_proton;
-    Float_t n_sigma_kaon;
-    Float_t n_sigma_pion;
-    Float_t golden_chi2;
 
     /* Loop over tracks in a single event */
 
@@ -187,6 +182,7 @@ void AliAnalysisQuickTask::ProcessTracks() {
 
         /* Fill histograms */
 
+        fHist_Tracks_NSigmasProton->Fill(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kProton));
         fHist_Tracks_Eta->Fill(track->Eta());
         PlotStatus(track);
     }  // end of loop over tracks
