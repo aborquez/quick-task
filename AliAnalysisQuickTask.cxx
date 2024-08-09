@@ -8,13 +8,28 @@ ClassImp(AliAnalysisQuickTask);
 AliAnalysisQuickTask::AliAnalysisQuickTask()
     : AliAnalysisTaskSE(),
       //   fIsMC(0),
+      fPDG(),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
       fPIDResponse(0),
+      kMin_Track_P(0.),
+      kMax_Track_P(0.),
       kMax_Track_Eta(0.),
       kMin_Track_NTPCClusters(0.),
-      kMax_Track_Chi2PerNTPCClusters(0.) {
+      kMax_Track_Chi2PerNTPCClusters(0.),
+      kMin_V0_Mass(0.),
+      kMax_V0_Mass(0.),
+      kMin_V0_Pt(0.),
+      kMax_V0_Eta(0.),
+      kMin_V0_CPAwrtPV(0.),
+      kMax_V0_CPAwrtPV(0.),
+      kMax_V0_DCAwrtPV(0.),
+      kMax_V0_DCAbtwDau(0.),
+      kMax_V0_DCAnegV0(0.),
+      kMax_V0_DCAposV0(0.),
+      kMax_V0_ArmPtOverAlpha(0.),
+      kMax_V0_Chi2ndf(0.) {
     //
 }
 
@@ -24,13 +39,28 @@ AliAnalysisQuickTask::AliAnalysisQuickTask()
 AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
     : AliAnalysisTaskSE(name),
       //   fIsMC(0),
+      fPDG(),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
       fPIDResponse(0),
+      kMin_Track_P(0.),
+      kMax_Track_P(0.),
       kMax_Track_Eta(0.),
       kMin_Track_NTPCClusters(0.),
-      kMax_Track_Chi2PerNTPCClusters(0.) {
+      kMax_Track_Chi2PerNTPCClusters(0.),
+      kMin_V0_Mass(0.),
+      kMax_V0_Mass(0.),
+      kMin_V0_Pt(0.),
+      kMax_V0_Eta(0.),
+      kMin_V0_CPAwrtPV(0.),
+      kMax_V0_CPAwrtPV(0.),
+      kMax_V0_DCAwrtPV(0.),
+      kMax_V0_DCAbtwDau(0.),
+      kMax_V0_DCAnegV0(0.),
+      kMax_V0_DCAposV0(0.),
+      kMax_V0_ArmPtOverAlpha(0.),
+      kMax_V0_Chi2ndf(0.) {
     DefineInput(0, TChain::Class());
     DefineOutput(1, TList::Class());
 }
@@ -61,14 +91,20 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     fOutputListOfHists = new TList();
     fOutputListOfHists->SetOwner(kTRUE);
 
-    fHist_Tracks_NSigmasProton = new TH1F("NSigmasProton", "", 100, -4, 4);
-    fOutputListOfHists->Add(fHist_Tracks_NSigmasProton);
+    fHist_Tracks_NSigmaProton = new TH1F("NSigmaProton", "", 100, -5., 5.);
+    fOutputListOfHists->Add(fHist_Tracks_NSigmaProton);
 
-    fHist_Tracks_Eta = new TH1F("Eta", "", 100, -0.8, 0.8);
+    fHist_Tracks_NSigmaPion = new TH1F("NSigmaPion", "", 100, -5., 5.);
+    fOutputListOfHists->Add(fHist_Tracks_NSigmaPion);
+
+    fHist_Tracks_Eta = new TH1F("Tracks_Eta", "", 100, -0.8, 0.8);
     fOutputListOfHists->Add(fHist_Tracks_Eta);
 
     fHist_Tracks_Status = new TH1F("Status", "", 20, 0., 20);
     fOutputListOfHists->Add(fHist_Tracks_Status);
+
+    fHist_AntiLambda_Mass = new TH1F("AntiLambda_Mass", "", 100, 0.5, 1.5);
+    fOutputListOfHists->Add(fHist_AntiLambda_Mass);
 
     PostData(1, fOutputListOfHists);
 }
@@ -81,32 +117,34 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
 void AliAnalysisQuickTask::UserExec(Option_t*) {
 
     Bool_t MB = (fInputHandler->IsEventSelected() & AliVEvent::kINT7);
-    if (!MB) {
-        AliInfoF("!! Event Rejected -- %u & %u = %u !!", fInputHandler->IsEventSelected(), AliVEvent::kINT7, MB);
-        return;
-    }
-    AliInfoF("!! Event Accepted -- %u & %u = %u !!", fInputHandler->IsEventSelected(), AliVEvent::kINT7, MB);
+    if (!MB) return;
 
     fMC = MCEvent();
-    if (!fMC) AliFatal("ERROR: AliMCEvent couldn't be found.");
+    if (!fMC) return;
 
     fMC_PrimaryVertex = const_cast<AliVVertex*>(fMC->GetPrimaryVertex());
 
     fESD = dynamic_cast<AliESDEvent*>(InputEvent());
-    if (!fESD) AliFatal("ERROR: AliESDEvent couldn't be found.");
+    if (!fESD) return;
 
     fMagneticField = fESD->GetMagneticField();
 
     fPrimaryVertex = const_cast<AliESDVertex*>(fESD->GetPrimaryVertex());
 
     DefineTracksCuts("");
+    DefineV0Cuts("");
 
-    // if (fIsMC)
     ProcessMCGen();
 
     ProcessTracks();
 
+    KalmanV0Finder();
+
+    /* Clear Containers */
+
     getPdgCode_fromMcIdx.clear();
+    esdIndicesOfAntiProtonTracks.clear();
+    esdIndicesOfPiPlusTracks.clear();
 
     // stream the results the analysis of this event to the output manager
     PostData(1, fOutputListOfHists);
@@ -117,8 +155,8 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
  - Input: `cuts_option`
 */
 void AliAnalysisQuickTask::DefineTracksCuts(TString cuts_option) {
-    kMin_Track_P = 1.;
-    kMax_Track_P = 2.;
+    kMin_Track_P = 0.3;
+    kMax_Track_P = 5.;
     kMax_Track_Eta = 0.8;
     kMin_Track_NTPCClusters = 50;
     kMax_Track_Chi2PerNTPCClusters = 7.;
@@ -126,7 +164,6 @@ void AliAnalysisQuickTask::DefineTracksCuts(TString cuts_option) {
 
 /*
  Loop over MC particles in a single event. Store the indices of the signal particles.
- - Uses: `fMC`, `fPDG`, `fMC_PrimaryVertex`
 */
 void AliAnalysisQuickTask::ProcessMCGen() {
 
@@ -145,6 +182,10 @@ void AliAnalysisQuickTask::ProcessMCGen() {
     }
 }
 
+/*                   */
+/**  Reconstructed  **/
+/*** ============= ***/
+
 /*
  Loop over the reconstructed tracks in a single event.
 */
@@ -152,37 +193,26 @@ void AliAnalysisQuickTask::ProcessTracks() {
 
     AliESDtrack* track;
 
-    Int_t mcIdx;
-    Int_t mcPdgCode;
-    Int_t mcIdxOfTrueV0;
-
-    Float_t pt, pz, eta;
-    Float_t impar_pv[2], dca_wrt_pv;
-    Float_t n_tpc_clusters;
-    Float_t chi2_over_nclusters;
-
-    /* Loop over tracks in a single event */
-
     for (Int_t esdIdxTrack = 0; esdIdxTrack < fESD->GetNumberOfTracks(); esdIdxTrack++) {
-
-        /* Get track */
 
         track = static_cast<AliESDtrack*>(fESD->GetTrack(esdIdxTrack));
 
-        /* Get MC info */
-
-        mcIdx = TMath::Abs(track->GetLabel());
-        mcPdgCode = getPdgCode_fromMcIdx[mcIdx];
-
-        /* Apply track selection */
-
         if (!PassesTrackSelection(track)) continue;
 
-        if (mcPdgCode != 2212) continue;
+        /* Store tracks indices */
+
+        if (track->Charge() < 0 && TMath::Abs(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kProton)) < 3.) {
+            esdIndicesOfAntiProtonTracks.push_back(esdIdxTrack);
+        }
+
+        if (track->Charge() > 0 && TMath::Abs(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kPion)) < 3.) {
+            esdIndicesOfPiPlusTracks.push_back(esdIdxTrack);
+        }
 
         /* Fill histograms */
 
-        fHist_Tracks_NSigmasProton->Fill(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kProton));
+        fHist_Tracks_NSigmaProton->Fill(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kProton));
+        fHist_Tracks_NSigmaPion->Fill(fPIDResponse->NumberOfSigmasTPC(track, AliPID::kPion));
         fHist_Tracks_Eta->Fill(track->Eta());
         PlotStatus(track);
     }  // end of loop over tracks
@@ -196,20 +226,19 @@ void AliAnalysisQuickTask::ProcessTracks() {
 */
 Bool_t AliAnalysisQuickTask::PassesTrackSelection(AliESDtrack* track) {
 
-    // if (!track->GetInnerParam()) return kFALSE;
-
     // >> p
-    // if (track->GetInnerParam()->GetP() > kMax_Track_P) return kFALSE;
-    // if (track->GetInnerParam()->GetP() < kMin_Track_P) return kFALSE;
+    if (!track->GetInnerParam()) return kFALSE;
+    if (kMin_Track_P && track->GetInnerParam()->GetP() < kMin_Track_P) return kFALSE;
+    if (kMax_Track_P && track->GetInnerParam()->GetP() > kMax_Track_P) return kFALSE;
 
     // >> eta
-    if (TMath::Abs(track->Eta()) > kMax_Track_Eta) return kFALSE;
+    if (kMax_Track_Eta && TMath::Abs(track->Eta()) > kMax_Track_Eta) return kFALSE;
 
     // >> TPC clusters
-    if (track->GetTPCNcls() < kMin_Track_NTPCClusters) return kFALSE;
+    if (kMin_Track_NTPCClusters && track->GetTPCNcls() < kMin_Track_NTPCClusters) return kFALSE;
 
     // >> chi2 per TPC cluster
-    if (track->GetTPCchi2() / (Double_t)track->GetTPCNcls() > kMax_Track_Chi2PerNTPCClusters) return kFALSE;
+    if (kMax_Track_Chi2PerNTPCClusters && track->GetTPCchi2() / (Double_t)track->GetTPCNcls() > kMax_Track_Chi2PerNTPCClusters) return kFALSE;
 
     return kTRUE;
 }
@@ -229,4 +258,302 @@ void AliAnalysisQuickTask::PlotStatus(AliESDtrack* track) {
     for (Int_t i = 0; i < 20; i++) {
         if ((track->GetStatus() & StatusCollection[i])) fHist_Tracks_Status->Fill(i);
     }
+}
+
+/*                          */
+/**  V0s -- Kalman Filter  **/
+/*** ==================== ***/
+
+/*
+ Define V0 selection cuts.
+ - Uses: `fSourceOfV0s`
+ - Input: `cuts_option`
+*/
+void AliAnalysisQuickTask::DefineV0Cuts(TString cuts_option) {
+
+    kMin_V0_Mass = 1.08;
+    kMax_V0_Mass = 1.16;
+    kMin_V0_Pt = 1.0;
+    kMax_V0_Eta = 0.9;
+
+    kMin_V0_CPAwrtPV = 0.99;
+    kMax_V0_CPAwrtPV = 1.;
+    kMax_V0_DCAwrtPV = 1.;
+    kMax_V0_DCAbtwDau = 2.;
+    kMax_V0_DCAnegV0 = 2.;
+    kMax_V0_DCAposV0 = 2.;
+    kMax_V0_ArmPtOverAlpha = 0.2;
+    kMax_V0_Chi2ndf = 10.;
+}
+
+/*
+ Find all V0s via Kalman Filter.
+*/
+void AliAnalysisQuickTask::KalmanV0Finder() {
+
+    AliESDtrack* esdTrackNeg;
+    AliESDtrack* esdTrackPos;
+
+    /* Define primary vertex as a KFVertex */
+
+    KFVertex kfPrimaryVertex = CreateKFVertex(*fPrimaryVertex);
+
+    /* Declare TLorentzVectors */
+
+    TLorentzVector lvTrackNeg;
+    TLorentzVector lvTrackPos;
+    TLorentzVector lvV0;
+
+    const Int_t pdgV0 = -3122;
+    const Int_t pdgTrackNeg = -2212;
+    const Int_t pdgTrackPos = 211;
+
+    /* Loop over all possible pairs of tracks */
+
+    for (Int_t& esdIdxNeg : esdIndicesOfAntiProtonTracks) {
+        for (Int_t& esdIdxPos : esdIndicesOfPiPlusTracks) {
+
+            /* Sanity check */
+
+            if (esdIdxNeg == esdIdxPos) continue;
+
+            /* Get tracks */
+
+            esdTrackNeg = static_cast<AliESDtrack*>(fESD->GetTrack(esdIdxNeg));
+            esdTrackPos = static_cast<AliESDtrack*>(fESD->GetTrack(esdIdxPos));
+
+            /* Kalman Filter */
+
+            KFParticle kfDaughterNeg = CreateKFParticle(*esdTrackNeg, fPDG.GetParticle(pdgTrackNeg)->Mass(), (Int_t)esdTrackNeg->Charge());
+            KFParticle kfDaughterPos = CreateKFParticle(*esdTrackPos, fPDG.GetParticle(pdgTrackPos)->Mass(), (Int_t)esdTrackPos->Charge());
+
+            KFParticleMother kfV0;
+            kfV0.AddDaughter(kfDaughterNeg);
+            kfV0.AddDaughter(kfDaughterPos);
+
+            /* Transport V0 and daughters */
+
+            kfV0.TransportToDecayVertex();
+
+            KFParticle kfTransportedNeg = TransportKFParticle(kfDaughterNeg, kfDaughterPos, pdgTrackNeg, (Int_t)esdTrackNeg->Charge());
+            KFParticle kfTransportedPos = TransportKFParticle(kfDaughterPos, kfDaughterNeg, pdgTrackPos, (Int_t)esdTrackPos->Charge());
+
+            /* Reconstruct V0 */
+
+            lvTrackNeg.SetXYZM(kfTransportedNeg.Px(), kfTransportedNeg.Py(), kfTransportedNeg.Pz(), fPDG.GetParticle(pdgTrackNeg)->Mass());
+            lvTrackPos.SetXYZM(kfTransportedPos.Px(), kfTransportedPos.Py(), kfTransportedPos.Pz(), fPDG.GetParticle(pdgTrackPos)->Mass());
+            lvV0 = lvTrackNeg + lvTrackPos;
+
+            /* Apply cuts and fill hist */
+
+            if (!PassesV0Cuts(kfV0, kfDaughterNeg, kfDaughterPos, lvV0, lvTrackNeg, lvTrackPos)) continue;
+
+            fHist_AntiLambda_Mass->Fill(lvV0.M());
+        }  // end of loop over pos. tracks
+    }      // end of loop over neg. tracks
+}
+
+/*
+ Apply cuts to a V0 candidate.
+*/
+Bool_t AliAnalysisQuickTask::PassesV0Cuts(KFParticleMother kfV0, KFParticle kfDaughterNeg, KFParticle kfDaughterPos, TLorentzVector lvV0,
+                                          TLorentzVector lvTrackNeg, TLorentzVector lvTrackPos) {
+
+    Double_t Mass = lvV0.M();
+    if (kMin_V0_Mass && Mass < kMin_V0_Mass) return kFALSE;
+    if (kMax_V0_Mass && Mass > kMax_V0_Mass) return kFALSE;
+
+    Double_t Pt = lvV0.Pt();
+    if (kMin_V0_Pt && Pt < kMin_V0_Pt) return kFALSE;
+
+    Double_t Eta = TMath::Abs(lvV0.Eta());
+    if (kMax_V0_Eta && Eta > kMax_V0_Eta) return kFALSE;
+
+    Double_t CPAwrtPV =
+        CosinePointingAngle(lvV0, kfV0.GetX(), kfV0.GetY(), kfV0.GetZ(), fPrimaryVertex->GetX(), fPrimaryVertex->GetY(), fPrimaryVertex->GetZ());
+    if (kMin_V0_CPAwrtPV && CPAwrtPV < kMin_V0_CPAwrtPV) return kFALSE;
+    if (kMax_V0_CPAwrtPV && CPAwrtPV > kMax_V0_CPAwrtPV) return kFALSE;
+
+    Double_t DCAwrtPV = LinePointDCA(lvV0.Px(), lvV0.Py(), lvV0.Pz(), kfV0.GetX(), kfV0.GetY(), kfV0.GetZ(), fPrimaryVertex->GetX(),
+                                     fPrimaryVertex->GetY(), fPrimaryVertex->GetZ());
+    if (kMax_V0_DCAwrtPV && DCAwrtPV > kMax_V0_DCAwrtPV) return kFALSE;
+
+    Double_t DCAbtwDau = TMath::Abs(kfDaughterNeg.GetDistanceFromParticle(kfDaughterPos));
+    if (kMax_V0_DCAbtwDau && DCAbtwDau > kMax_V0_DCAbtwDau) return kFALSE;
+
+    Double_t DCAnegV0 = TMath::Abs(kfDaughterNeg.GetDistanceFromVertex(kfV0));
+    if (kMax_V0_DCAnegV0 && DCAnegV0 > kMax_V0_DCAnegV0) return kFALSE;
+
+    Double_t DCAposV0 = TMath::Abs(kfDaughterPos.GetDistanceFromVertex(kfV0));
+    if (kMax_V0_DCAposV0 && DCAposV0 > kMax_V0_DCAposV0) return kFALSE;
+
+    Double_t ArmPt = ArmenterosQt(lvV0.Px(), lvV0.Py(), lvV0.Pz(), lvTrackNeg.Px(), lvTrackNeg.Py(), lvTrackNeg.Pz());
+    Double_t ArmAlpha = ArmenterosAlpha(lvV0.Px(), lvV0.Py(), lvV0.Pz(), lvTrackNeg.Px(), lvTrackNeg.Py(), lvTrackNeg.Pz(), lvTrackPos.Px(),
+                                        lvTrackPos.Py(), lvTrackPos.Pz());
+    Double_t ArmPtOverAlpha = TMath::Abs(ArmPt / ArmAlpha);
+    if (kMax_V0_ArmPtOverAlpha && ArmPtOverAlpha > kMax_V0_ArmPtOverAlpha) return kFALSE;
+
+    Double_t Chi2ndf = (Double_t)kfV0.GetChi2() / (Double_t)kfV0.GetNDF();
+    if (kMax_V0_Chi2ndf && Chi2ndf > kMax_V0_Chi2ndf) return kFALSE;
+
+    return kTRUE;
+}
+
+/*                            */
+/**  Mathematical Functions  **/
+/*** ====================== ***/
+
+Double_t AliAnalysisQuickTask::CosinePointingAngle(TLorentzVector lvParticle, Double_t X, Double_t Y, Double_t Z, Double_t refPointX,
+                                                   Double_t refPointY, Double_t refPointZ) {
+    TVector3 posRelativeToRef(X - refPointX, Y - refPointY, Z - refPointZ);
+    return TMath::Cos(lvParticle.Angle(posRelativeToRef));
+}
+
+Double_t AliAnalysisQuickTask::ArmenterosAlpha(Double_t V0_Px, Double_t V0_Py, Double_t V0_Pz, Double_t Neg_Px, Double_t Neg_Py, Double_t Neg_Pz,
+                                               Double_t Pos_Px, Double_t Pos_Py, Double_t Pos_Pz) {
+    TVector3 momTot(V0_Px, V0_Py, V0_Pz);
+    TVector3 momNeg(Neg_Px, Neg_Py, Neg_Pz);
+    TVector3 momPos(Pos_Px, Pos_Py, Pos_Pz);
+
+    Double_t lQlNeg = momNeg.Dot(momTot) / momTot.Mag();
+    Double_t lQlPos = momPos.Dot(momTot) / momTot.Mag();
+
+    // (protection)
+    if (lQlPos + lQlNeg == 0.) {
+        return 2;
+    }  // closure
+    return (lQlPos - lQlNeg) / (lQlPos + lQlNeg);
+}
+
+Double_t AliAnalysisQuickTask::ArmenterosQt(Double_t V0_Px, Double_t V0_Py, Double_t V0_Pz, Double_t Neg_Px, Double_t Neg_Py, Double_t Neg_Pz) {
+    TVector3 momTot(V0_Px, V0_Py, V0_Pz);
+    TVector3 momNeg(Neg_Px, Neg_Py, Neg_Pz);
+
+    return momNeg.Perp(momTot);
+}
+
+Double_t AliAnalysisQuickTask::LinePointDCA(Double_t V0_Px, Double_t V0_Py, Double_t V0_Pz, Double_t V0_X, Double_t V0_Y, Double_t V0_Z,
+                                            Double_t refPointX, Double_t refPointY, Double_t refPointZ) {
+
+    TVector3 V0Momentum(V0_Px, V0_Py, V0_Pz);
+    TVector3 V0Vertex(V0_X, V0_Y, V0_Z);
+    TVector3 RefVertex(refPointX, refPointY, refPointZ);
+
+    TVector3 CrossProduct = (RefVertex - V0Vertex).Cross(V0Momentum);
+
+    return CrossProduct.Mag() / V0Momentum.Mag();
+}
+
+/*                             */
+/**  Kalman Filter Functions  **/
+/*** ======================= ***/
+
+/*
+ Correct initialization of a KFParticle.
+ (Copied from `AliPhysics/PWGLF/.../AliAnalysisTaskDoubleHypNucTree.cxx`)
+*/
+KFParticle AliAnalysisQuickTask::CreateKFParticle(AliExternalTrackParam& track, Double_t mass, Int_t charge) {
+
+    Double_t fP[6];
+    track.GetXYZ(fP);
+    track.PxPyPz(fP + 3);
+
+    Int_t fQ = track.Charge() * TMath::Abs(charge);
+    fP[3] *= TMath::Abs(charge);
+    fP[4] *= TMath::Abs(charge);
+    fP[5] *= TMath::Abs(charge);
+
+    Double_t pt = 1. / TMath::Abs(track.GetParameter()[4]) * TMath::Abs(charge);
+    Double_t cs = TMath::Cos(track.GetAlpha());
+    Double_t sn = TMath::Sin(track.GetAlpha());
+    Double_t r = TMath::Sqrt((1. - track.GetParameter()[2]) * (1. + track.GetParameter()[2]));
+
+    Double_t m00 = -sn;
+    Double_t m10 = cs;
+    Double_t m23 = -pt * (sn + track.GetParameter()[2] * cs / r);
+    Double_t m43 = -pt * pt * (r * cs - track.GetParameter()[2] * sn);
+    Double_t m24 = pt * (cs - track.GetParameter()[2] * sn / r);
+    Double_t m44 = -pt * pt * (r * sn + track.GetParameter()[2] * cs);
+    Double_t m35 = pt;
+    Double_t m45 = -pt * pt * track.GetParameter()[3];
+
+    m43 *= track.GetSign();
+    m44 *= track.GetSign();
+    m45 *= track.GetSign();
+
+    const Double_t* cTr = track.GetCovariance();
+    Double_t fC[21];
+    fC[0] = cTr[0] * m00 * m00;
+    fC[1] = cTr[0] * m00 * m10;
+    fC[2] = cTr[0] * m10 * m10;
+    fC[3] = cTr[1] * m00;
+    fC[4] = cTr[1] * m10;
+    fC[5] = cTr[2];
+    fC[6] = m00 * (cTr[3] * m23 + cTr[10] * m43);
+    fC[7] = m10 * (cTr[3] * m23 + cTr[10] * m43);
+    fC[8] = cTr[4] * m23 + cTr[11] * m43;
+    fC[9] = m23 * (cTr[5] * m23 + cTr[12] * m43) + m43 * (cTr[12] * m23 + cTr[14] * m43);
+    fC[10] = m00 * (cTr[3] * m24 + cTr[10] * m44);
+    fC[11] = m10 * (cTr[3] * m24 + cTr[10] * m44);
+    fC[12] = cTr[4] * m24 + cTr[11] * m44;
+    fC[13] = m23 * (cTr[5] * m24 + cTr[12] * m44) + m43 * (cTr[12] * m24 + cTr[14] * m44);
+    fC[14] = m24 * (cTr[5] * m24 + cTr[12] * m44) + m44 * (cTr[12] * m24 + cTr[14] * m44);
+    fC[15] = m00 * (cTr[6] * m35 + cTr[10] * m45);
+    fC[16] = m10 * (cTr[6] * m35 + cTr[10] * m45);
+    fC[17] = cTr[7] * m35 + cTr[11] * m45;
+    fC[18] = m23 * (cTr[8] * m35 + cTr[12] * m45) + m43 * (cTr[13] * m35 + cTr[14] * m45);
+    fC[19] = m24 * (cTr[8] * m35 + cTr[12] * m45) + m44 * (cTr[13] * m35 + cTr[14] * m45);
+    fC[20] = m35 * (cTr[9] * m35 + cTr[13] * m45) + m45 * (cTr[13] * m35 + cTr[14] * m45);
+
+    KFParticle part;
+    part.Create(fP, fC, fQ, mass);
+
+    return part;
+}
+
+/*
+ Correct initialization of a KFVertex.
+ (Copied from `AliPhysics/PWGLF/.../AliAnalysisTaskDoubleHypNucTree.cxx`)
+*/
+KFVertex AliAnalysisQuickTask::CreateKFVertex(const AliVVertex& vertex) {
+
+    Double_t param[6];
+    vertex.GetXYZ(param);
+
+    Double_t cov[6];
+    vertex.GetCovarianceMatrix(cov);
+
+    KFPVertex kfpVtx;
+    Float_t paramF[3] = {(Float_t)param[0], (Float_t)param[1], (Float_t)param[2]};
+    kfpVtx.SetXYZ(paramF);
+    Float_t covF[6] = {(Float_t)cov[0], (Float_t)cov[1], (Float_t)cov[2], (Float_t)cov[3], (Float_t)cov[4], (Float_t)cov[5]};
+    kfpVtx.SetCovarianceMatrix(covF);
+
+    KFVertex KFVtx(kfpVtx);
+
+    return KFVtx;
+}
+
+/*
+ Transport a KFParticle to the point of closest approach w.r.t. another KFParticle.
+ - Uses: `fPDG`
+ - Input: `kfThis`, `kfOther`, `pdgThis`, `chargeThis`
+ - Return: `kfTransported`
+*/
+KFParticle AliAnalysisQuickTask::TransportKFParticle(KFParticle kfThis, KFParticle kfOther, Int_t pdgThis, Int_t chargeThis) {
+
+    float dS[2];
+    float dsdr[4][6];
+    kfThis.GetDStoParticle(kfOther, dS, dsdr);
+
+    float mP[8], mC[36];
+    kfThis.Transport(dS[0], dsdr[0], mP, mC);
+
+    float mM = fPDG.GetParticle(pdgThis)->Mass();
+    float mQ = chargeThis;  // only valid for charged particles with Q = +/- 1
+
+    KFParticle kfTransported;
+    kfTransported.Create(mP, mC, mQ, mM);
+
+    return kfTransported;
 }

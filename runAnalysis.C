@@ -20,6 +20,8 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     gInterpreter->ProcessLine(".include $ROOTSYS/include");
     gInterpreter->ProcessLine(".include $ALICE_ROOT/include");
+    gInterpreter->ProcessLine(".include $ALICE_PHYSICS/include");
+    gInterpreter->ProcessLine(".include $KFPARTICLE_ROOT/include");
 
     Bool_t local = kFALSE;    // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
     Bool_t gridTest = kTRUE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
