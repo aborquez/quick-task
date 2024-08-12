@@ -18,6 +18,10 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
     const Bool_t IS_MC = kTRUE;
     const Int_t N_PASS = 3;  // TEST
 
+    TString GRID_DATA_DIR = "/alice/sim/2023/LHC23l1a3/A1.8";
+    Int_t GRID_RUN_NUMBER = 297595;
+    TString GRID_DATA_PATTERN = "/*/AliESDs.root";
+
     gInterpreter->ProcessLine(".include $ROOTSYS/include");
     gInterpreter->ProcessLine(".include $ALICE_ROOT/include");
     gInterpreter->ProcessLine(".include $ALICE_PHYSICS/include");
@@ -40,18 +44,17 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
         alienHandler->SetAnalysisSource("AliAnalysisQuickTask.cxx");
         alienHandler->SetAliPhysicsVersion("vAN-20240807_O2-1");
         alienHandler->SetExecutableCommand("aliroot -l -q -b");
-        alienHandler->SetGridDataDir("/alice/sim/2020/LHC20e3a/");
+        alienHandler->SetGridDataDir(GRID_DATA_DIR);
         if (!IS_MC) alienHandler->SetRunPrefix("000");
-        alienHandler->AddRunNumber(296749);
-        alienHandler->SetDataPattern("/*/AliESDs.root");
-        alienHandler->SetSplitMaxInputFileNumber(40);
+        alienHandler->AddRunNumber(GRID_RUN_NUMBER);
+        alienHandler->SetDataPattern(GRID_DATA_PATTERN);
         alienHandler->SetTTL(3600);
         alienHandler->SetOutputToRunNo(kTRUE);
         alienHandler->SetKeepLogs(kTRUE);
         alienHandler->SetMergeViaJDL(kFALSE);
         // alienHandler->SetMaxMergeStages(1);
-        alienHandler->SetGridWorkingDir("TEST_WorkingDir");
-        alienHandler->SetGridOutputDir("TEST_OutputDir");
+        alienHandler->SetGridWorkingDir("work");
+        alienHandler->SetGridOutputDir("output");
         alienHandler->SetJDLName("QuickTask.jdl");
         alienHandler->SetExecutable("QuickTask.sh");
         mgr->SetGridHandler(alienHandler);
@@ -88,20 +91,24 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     gInterpreter->LoadMacro("AliAnalysisQuickTask.cxx++g");
 
-    AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(gInterpreter->ExecuteMacro("AddTask_QuickTask.C"));
+    TString AddQuickTask_Options = Form("(\"%s\", %i)", GRID_DATA_DIR.Data(), GRID_RUN_NUMBER);
+    AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(gInterpreter->ExecuteMacro("AddTask_QuickTask.C" + AddQuickTask_Options));
     if (!task) return;
 
     /* Init Analysis Manager */
 
+    mgr->SetDebugLevel(3);
     if (!mgr->InitAnalysis()) return;
 
     /* Start Analysis */
 
     if (!local) {
         if (gridTest) {
-            alienHandler->SetNtestFiles(5);
+            alienHandler->SetNtestFiles(1);
             alienHandler->SetRunMode("test");
         } else {
+            alienHandler->SetNtestFiles(5);
+            alienHandler->SetSplitMaxInputFileNumber(5);
             alienHandler->SetRunMode("full");
         }
         mgr->StartAnalysis("grid");

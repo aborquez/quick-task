@@ -9,6 +9,7 @@ AliAnalysisQuickTask::AliAnalysisQuickTask()
     : AliAnalysisTaskSE(),
       //   fIsMC(0),
       fPDG(),
+      fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
@@ -40,6 +41,7 @@ AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
     : AliAnalysisTaskSE(name),
       //   fIsMC(0),
       fPDG(),
+      fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
       fESD(0),
@@ -62,13 +64,15 @@ AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
       kMax_V0_ArmPtOverAlpha(0.),
       kMax_V0_Chi2ndf(0.) {
     DefineInput(0, TChain::Class());
-    DefineOutput(1, TList::Class());
+    DefineOutput(1, TList::Class());  // fOutputListOfTrees
+    DefineOutput(2, TList::Class());  // fOutputListOfHists
 }
 
 /*
  Destructor.
 */
 AliAnalysisQuickTask::~AliAnalysisQuickTask() {
+    if (fOutputListOfTrees) delete fOutputListOfTrees;
     if (fOutputListOfHists) delete fOutputListOfHists;
 }
 
@@ -84,9 +88,21 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
 
     AliESDInputHandler* inputHandler = (AliESDInputHandler*)(man->GetInputEventHandler());
     if (!inputHandler) AliFatal("ERROR: AliESDInputHandler couldn't be found.");
+
     fPIDResponse = inputHandler->GetPIDResponse();
 
-    /** Prepare output histograms */
+    /** Prepare Output **/
+
+    /* Trees */
+
+    fOutputListOfTrees = new TList();
+    fOutputListOfTrees->SetOwner(kTRUE);
+
+    fLogTree = ReadLogs("/alice/sim/2023/LHC23l1a3/A1.8", 297595, 1);
+    fLogTree->Print();
+    fOutputListOfTrees->Add(fLogTree);
+
+    /* Histograms */
 
     fOutputListOfHists = new TList();
     fOutputListOfHists->SetOwner(kTRUE);
@@ -106,7 +122,8 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     fHist_AntiLambda_Mass = new TH1F("AntiLambda_Mass", "", 100, 0.5, 1.5);
     fOutputListOfHists->Add(fHist_AntiLambda_Mass);
 
-    PostData(1, fOutputListOfHists);
+    PostData(1, fOutputListOfTrees);
+    PostData(2, fOutputListOfHists);
 }
 
 /*
@@ -127,6 +144,9 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
     fESD = dynamic_cast<AliESDEvent*>(InputEvent());
     if (!fESD) return;
 
+    AliInfoF("!! Run Number %i !!", fESD->GetRunNumber());
+    AliInfoF("!! Period Number %i !!", fESD->GetPeriodNumber());
+
     fMagneticField = fESD->GetMagneticField();
 
     fPrimaryVertex = const_cast<AliESDVertex*>(fESD->GetPrimaryVertex());
@@ -146,8 +166,8 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
     esdIndicesOfAntiProtonTracks.clear();
     esdIndicesOfPiPlusTracks.clear();
 
-    // stream the results the analysis of this event to the output manager
-    PostData(1, fOutputListOfHists);
+    PostData(1, fOutputListOfTrees);
+    PostData(2, fOutputListOfHists);
 }
 
 /*
@@ -556,4 +576,108 @@ KFParticle AliAnalysisQuickTask::TransportKFParticle(KFParticle kfThis, KFPartic
     kfTransported.Create(mP, mC, mQ, mM);
 
     return kfTransported;
+}
+
+/*                    */
+/**  External Files  **/
+/*** ============== ***/
+
+/*
+ Hola hola.
+*/
+TTree* AliAnalysisQuickTask::ReadLogs(TString input_dir, Int_t run_number, Int_t dir_number) {
+
+    TTree* t = new TTree("Injected", "Injected");  // i.e., before the antisexaquark-nucleon interaction
+
+    TGrid* alien = nullptr;
+    if (!gGrid) {
+        // alien = TGrid::Connect("alien://", 0, 0, "t");
+        alien = TGrid::Connect("alien://");
+        if (!alien) return t;
+    }
+
+    TString filename = "sim.log";
+    gSystem->Exec(Form("alien.py cp alien://%s/%i/%03i/%s file://.", input_dir.Data(), run_number, dir_number, filename.Data()));
+    TString new_path = Form("%s/%s", gSystem->pwd(), filename.Data());
+    AliInfoF("!! Reading file = %s !!", new_path.Data());
+
+    std::ifstream SimLog(new_path);
+    if (!SimLog.is_open()) {
+        AliInfo("!! Unable to open file !!");
+        return t;
+    }
+
+    Char_t ReactionChannel;
+
+    Int_t RunNumber = run_number;
+    Int_t DirNumber = dir_number;
+
+    Int_t EventID = -1;
+    Int_t ReactionID;
+    Int_t NPDGCode;
+    Double_t SPx, SPy, SPz, SM;
+    Double_t NPx, NPy, NPz;
+
+    t->Branch("RunNumber", &RunNumber);
+    t->Branch("DirNumber", &DirNumber);
+    t->Branch("ReactionChannel", &ReactionChannel);
+    t->Branch("EventID", &EventID);
+    t->Branch("ReactionID", &ReactionID);
+    t->Branch("Nucl_PDGCode", &NPDGCode);
+    t->Branch("Sexa_Px_ini", &SPx);
+    t->Branch("Sexa_Py_ini", &SPy);
+    t->Branch("Sexa_Pz_ini", &SPz);
+    t->Branch("Sexa_M_ini", &SM);
+    t->Branch("Fermi_Px", &NPx);
+    t->Branch("Fermi_Py", &NPy);
+    t->Branch("Fermi_Pz", &NPz);
+
+    // auxiliary variables
+    std::string cstr_line;
+    TString tstr_line, csv;
+    TObjArray* csv_arr = nullptr;
+
+    /* Read lines */
+
+    while (std::getline(SimLog, cstr_line)) {
+
+        tstr_line = cstr_line;
+
+        if (!ReactionChannel) {
+            if (tstr_line.Contains("I-AliGenSexaquarkReaction::PrintParameters:   Chosen Reaction Channel : ")) {
+                ReactionChannel = tstr_line(71);
+                std::cout << "!! ReadLogs !! reaction channel: " << ReactionChannel << " !!" << std::endl;
+            }
+        }
+
+        if (!SM) {
+            if (tstr_line.Contains("I-AliGenSexaquarkReaction::PrintParameters:   * M = ")) {
+                SM = TString(tstr_line(51, 59)).Atof();  // assuming M with length 8
+                std::cout << "!! ReadLogs !! sexaquark mass: " << SM << " !!" << std::endl;
+            }
+        }
+
+        // a new event has appeared
+        if (tstr_line.Contains("I-AliGenCocktail::Generate: Generator 1: AliGenHijing")) EventID++;
+
+        if (!tstr_line.Contains("I-AliGenSexaquarkReaction::GenerateN: 6")) continue;
+
+        csv = static_cast<TString>(tstr_line(38, tstr_line.Length() - 1));
+        csv_arr = csv.Tokenize(",");
+
+        ReactionID = dynamic_cast<TObjString*>(csv_arr->At(0))->String().Atoi();
+        NPDGCode = ReactionChannel == 'A' ? 2112 : 2212;  // considering only ADEH
+        SPx = dynamic_cast<TObjString*>(csv_arr->At(1))->String().Atof();
+        SPy = dynamic_cast<TObjString*>(csv_arr->At(2))->String().Atof();
+        SPz = dynamic_cast<TObjString*>(csv_arr->At(3))->String().Atof();
+        NPx = dynamic_cast<TObjString*>(csv_arr->At(4))->String().Atof();
+        NPy = dynamic_cast<TObjString*>(csv_arr->At(5))->String().Atof();
+        NPz = dynamic_cast<TObjString*>(csv_arr->At(6))->String().Atof();
+
+        t->Fill();
+    }  // end of loop over lines
+
+    SimLog.close();
+
+    return t;
 }
