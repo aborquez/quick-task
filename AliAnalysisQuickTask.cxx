@@ -9,6 +9,7 @@ AliAnalysisQuickTask::AliAnalysisQuickTask()
     : AliAnalysisTaskSE(),
       //   fIsMC(0),
       fPDG(),
+      fLogTree(0),
       fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
@@ -41,6 +42,7 @@ AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
     : AliAnalysisTaskSE(name),
       //   fIsMC(0),
       fPDG(),
+      fLogTree(0),
       fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
@@ -86,7 +88,7 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     AliAnalysisManager* man = AliAnalysisManager::GetAnalysisManager();
     if (!man) AliFatal("ERROR: AliAnalysisManager couldn't be found.");
 
-    AliESDInputHandler* inputHandler = (AliESDInputHandler*)(man->GetInputEventHandler());
+    AliESDInputHandler* inputHandler = (AliESDInputHandler*)man->GetInputEventHandler();
     if (!inputHandler) AliFatal("ERROR: AliESDInputHandler couldn't be found.");
 
     fPIDResponse = inputHandler->GetPIDResponse();
@@ -98,8 +100,7 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     fOutputListOfTrees = new TList();
     fOutputListOfTrees->SetOwner(kTRUE);
 
-    fLogTree = ReadLogs("/alice/sim/2023/LHC23l1a3/A1.8", 297595, 1);
-    fLogTree->Print();
+    fLogTree = new TTree("Injected", "Injected");
     fOutputListOfTrees->Add(fLogTree);
 
     /* Histograms */
@@ -133,6 +134,13 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
 */
 void AliAnalysisQuickTask::UserExec(Option_t*) {
 
+    if (fIsFirstEvent) {
+        if (fAliEnPath == "") AliInfo("!! No luck finding fAliEnPath !!");
+        AliInfoF("!! fAliEnPath: %s !!", fAliEnPath.Data());
+        if (LoadLogsIntoTree()) fLogTree->Print();
+        fIsFirstEvent = kFALSE;
+    }
+
     Bool_t MB = (fInputHandler->IsEventSelected() & AliVEvent::kINT7);
     if (!MB) return;
 
@@ -143,9 +151,6 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
 
     fESD = dynamic_cast<AliESDEvent*>(InputEvent());
     if (!fESD) return;
-
-    AliInfoF("!! Run Number %i !!", fESD->GetRunNumber());
-    AliInfoF("!! Period Number %i !!", fESD->GetPeriodNumber());
 
     fMagneticField = fESD->GetMagneticField();
 
@@ -168,6 +173,25 @@ void AliAnalysisQuickTask::UserExec(Option_t*) {
 
     PostData(1, fOutputListOfTrees);
     PostData(2, fOutputListOfHists);
+}
+
+/*
+ Umm. Hello.
+ This function is loaded during AliAnalysisManager::Notify()
+*/
+Bool_t AliAnalysisQuickTask::UserNotify() {
+    AliAnalysisManager* man = AliAnalysisManager::GetAnalysisManager();
+    if (!man) AliFatal("!! Analysis Manager not found !!");
+    TTree* man_tree = man->GetTree();
+    if (!man_tree) AliFatal("!! Analysis Manager Tree not found !!");
+    TFile* man_file = man_tree->GetCurrentFile();
+    if (!man_file) AliFatal("!! Analysis Manager File not found !!");
+    fAliEnPath = man_file->GetName();
+    AliInfoF("!! Loaded AliEn Path: %s !!", fAliEnPath.Data());
+
+    fIsFirstEvent = kTRUE;
+
+    return kTRUE;
 }
 
 /*
@@ -584,53 +608,79 @@ KFParticle AliAnalysisQuickTask::TransportKFParticle(KFParticle kfThis, KFPartic
 
 /*
  Hola hola.
+ It's loaded after UserCreateOutputObjects() and before UserExec()
+ - Uses: `fAliEnPath`, `fLogTree`
+ Note: must be executed ONLY when analyzing SIGNAL SIMs, protection PENDING!
 */
-TTree* AliAnalysisQuickTask::ReadLogs(TString input_dir, Int_t run_number, Int_t dir_number) {
-
-    TTree* t = new TTree("Injected", "Injected");  // i.e., before the antisexaquark-nucleon interaction
+Bool_t AliAnalysisQuickTask::LoadLogsIntoTree() {
 
     TGrid* alien = nullptr;
     if (!gGrid) {
-        // alien = TGrid::Connect("alien://", 0, 0, "t");
         alien = TGrid::Connect("alien://");
-        if (!alien) return t;
+        if (!alien) return kFALSE;
     }
 
-    TString filename = "sim.log";
-    gSystem->Exec(Form("alien.py cp alien://%s/%i/%03i/%s file://.", input_dir.Data(), run_number, dir_number, filename.Data()));
-    TString new_path = Form("%s/%s", gSystem->pwd(), filename.Data());
-    AliInfoF("!! Reading file = %s !!", new_path.Data());
+    TString AliEn_Dir = fAliEnPath(0, fAliEnPath.Last('/'));
+    TString Log_Basename = "sim.log";
+
+    TObjArray* tokens = fAliEnPath.Tokenize("/");
+    Int_t AliEn_Year = ((TObjString*)tokens->At(3))->GetString().Atoi();
+    // TString AliEn_ProductionName = ((TObjString*)tokens->At(4))->GetString();
+    TString AliEn_SimSubSet = ((TObjString*)tokens->At(5))->GetString();
+    Char_t ReactionChannelLetter = AliEn_SimSubSet[0];
+    Double_t SM = TString(AliEn_SimSubSet(1, 4)).Atof();
+    Int_t AliEn_RunNumber = ((TObjString*)tokens->At(6))->GetString().Atoi();
+    Int_t AliEn_DirNumber = ((TObjString*)tokens->At(7))->GetString().Atoi();
+
+    TString orig_path = Form("%s/%s", AliEn_Dir.Data(), Log_Basename.Data());
+    AliInfoF("!! Copying file %s ... !!", orig_path.Data());
+
+    gSystem->Exec(Form("alien.py cp %s file://.", orig_path.Data()));
+
+    TString new_path = Form("%s/%s", gSystem->pwd(), Log_Basename.Data());
+    AliInfoF("!! Reading file %s ... !!", new_path.Data());
 
     std::ifstream SimLog(new_path);
     if (!SimLog.is_open()) {
         AliInfo("!! Unable to open file !!");
-        return t;
+        return kFALSE;
     }
-
-    Char_t ReactionChannel;
-
-    Int_t RunNumber = run_number;
-    Int_t DirNumber = dir_number;
 
     Int_t EventID = -1;
     Int_t ReactionID;
     Int_t NPDGCode;
-    Double_t SPx, SPy, SPz, SM;
+    Double_t SPx, SPy, SPz;
     Double_t NPx, NPy, NPz;
 
-    t->Branch("RunNumber", &RunNumber);
-    t->Branch("DirNumber", &DirNumber);
-    t->Branch("ReactionChannel", &ReactionChannel);
-    t->Branch("EventID", &EventID);
-    t->Branch("ReactionID", &ReactionID);
-    t->Branch("Nucl_PDGCode", &NPDGCode);
-    t->Branch("Sexa_Px_ini", &SPx);
-    t->Branch("Sexa_Py_ini", &SPy);
-    t->Branch("Sexa_Pz_ini", &SPz);
-    t->Branch("Sexa_M_ini", &SM);
-    t->Branch("Fermi_Px", &NPx);
-    t->Branch("Fermi_Py", &NPy);
-    t->Branch("Fermi_Pz", &NPz);
+    if (fLogTree->GetBranch("ReactionChannel")) {
+        fLogTree->SetBranchAddress("RunNumber", &AliEn_RunNumber);
+        fLogTree->SetBranchAddress("DirNumber", &AliEn_DirNumber);
+        fLogTree->SetBranchAddress("ReactionChannel", &ReactionChannelLetter);
+        fLogTree->SetBranchAddress("EventID", &EventID);
+        fLogTree->SetBranchAddress("ReactionID", &ReactionID);
+        fLogTree->SetBranchAddress("Nucl_PDGCode", &NPDGCode);
+        fLogTree->SetBranchAddress("Sexa_Px_ini", &SPx);
+        fLogTree->SetBranchAddress("Sexa_Py_ini", &SPy);
+        fLogTree->SetBranchAddress("Sexa_Pz_ini", &SPz);
+        fLogTree->SetBranchAddress("Sexa_M_ini", &SM);
+        fLogTree->SetBranchAddress("Fermi_Px", &NPx);
+        fLogTree->SetBranchAddress("Fermi_Py", &NPy);
+        fLogTree->SetBranchAddress("Fermi_Pz", &NPz);
+    } else {
+        fLogTree->Branch("RunNumber", &AliEn_RunNumber);
+        fLogTree->Branch("DirNumber", &AliEn_DirNumber);
+        fLogTree->Branch("ReactionChannel", &ReactionChannelLetter);
+        fLogTree->Branch("EventID", &EventID);
+        fLogTree->Branch("ReactionID", &ReactionID);
+        fLogTree->Branch("Nucl_PDGCode", &NPDGCode);
+        fLogTree->Branch("Sexa_Px_ini", &SPx);
+        fLogTree->Branch("Sexa_Py_ini", &SPy);
+        fLogTree->Branch("Sexa_Pz_ini", &SPz);
+        fLogTree->Branch("Sexa_M_ini", &SM);
+        fLogTree->Branch("Fermi_Px", &NPx);
+        fLogTree->Branch("Fermi_Py", &NPy);
+        fLogTree->Branch("Fermi_Pz", &NPz);
+    }
 
     // auxiliary variables
     std::string cstr_line;
@@ -643,20 +693,6 @@ TTree* AliAnalysisQuickTask::ReadLogs(TString input_dir, Int_t run_number, Int_t
 
         tstr_line = cstr_line;
 
-        if (!ReactionChannel) {
-            if (tstr_line.Contains("I-AliGenSexaquarkReaction::PrintParameters:   Chosen Reaction Channel : ")) {
-                ReactionChannel = tstr_line(71);
-                std::cout << "!! ReadLogs !! reaction channel: " << ReactionChannel << " !!" << std::endl;
-            }
-        }
-
-        if (!SM) {
-            if (tstr_line.Contains("I-AliGenSexaquarkReaction::PrintParameters:   * M = ")) {
-                SM = TString(tstr_line(51, 59)).Atof();  // assuming M with length 8
-                std::cout << "!! ReadLogs !! sexaquark mass: " << SM << " !!" << std::endl;
-            }
-        }
-
         // a new event has appeared
         if (tstr_line.Contains("I-AliGenCocktail::Generate: Generator 1: AliGenHijing")) EventID++;
 
@@ -666,7 +702,7 @@ TTree* AliAnalysisQuickTask::ReadLogs(TString input_dir, Int_t run_number, Int_t
         csv_arr = csv.Tokenize(",");
 
         ReactionID = dynamic_cast<TObjString*>(csv_arr->At(0))->String().Atoi();
-        NPDGCode = ReactionChannel == 'A' ? 2112 : 2212;  // considering only ADEH
+        NPDGCode = ReactionChannelLetter == 'A' ? 2112 : 2212;  // considering only ADEH
         SPx = dynamic_cast<TObjString*>(csv_arr->At(1))->String().Atof();
         SPy = dynamic_cast<TObjString*>(csv_arr->At(2))->String().Atof();
         SPz = dynamic_cast<TObjString*>(csv_arr->At(3))->String().Atof();
@@ -674,10 +710,11 @@ TTree* AliAnalysisQuickTask::ReadLogs(TString input_dir, Int_t run_number, Int_t
         NPy = dynamic_cast<TObjString*>(csv_arr->At(5))->String().Atof();
         NPz = dynamic_cast<TObjString*>(csv_arr->At(6))->String().Atof();
 
-        t->Fill();
+        fLogTree->Fill();
     }  // end of loop over lines
 
+    AliInfoF("!! Closing file %s ... !!", new_path.Data());
     SimLog.close();
 
-    return t;
+    return kTRUE;
 }

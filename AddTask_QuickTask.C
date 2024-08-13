@@ -1,8 +1,8 @@
-AliAnalysisQuickTask *AddTask_QuickTask(TString grid_data_dir, Int_t run_number) {
+AliAnalysisQuickTask *AddTask_QuickTask() {
 
     AliAnalysisManager *mgr = AliAnalysisManager::GetAnalysisManager();
 
-    AliAnalysisQuickTask *task = new AliAnalysisQuickTask("name");
+    AliAnalysisQuickTask *task = new AliAnalysisQuickTask("AnalysisTask_QuickTask");
 
     mgr->AddTask(task);
 

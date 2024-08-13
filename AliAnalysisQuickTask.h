@@ -22,6 +22,7 @@
 #include "TH1F.h"
 #include "TList.h"
 #include "TLorentzVector.h"
+#include "TObjArray.h"
 #include "TObjString.h"
 #include "TROOT.h"
 #include "TString.h"
@@ -30,13 +31,11 @@
 #include "TVector3.h"
 
 #include "AliAnalysisManager.h"
-#include "AliAnalysisTask.h"
 #include "AliExternalTrackParam.h"
 #include "AliHelix.h"
 #include "AliInputEventHandler.h"
 #include "AliLog.h"
 #include "AliPIDResponse.h"
-#include "AliRunTag.h"
 
 #include "AliESD.h"
 #include "AliESDEvent.h"
@@ -83,6 +82,7 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     void PrepareTracksHistograms();
     virtual void UserExec(Option_t* option);
     virtual void Terminate(Option_t* option) { return; }
+    virtual Bool_t UserNotify();
 
     /* MC Generated */
     void ProcessMCGen();
@@ -116,7 +116,7 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     KFParticle TransportKFParticle(KFParticle kfThis, KFParticle kfOther, Int_t pdgThis, Int_t chargeThis);
 
     /* External Files */
-    TTree* ReadLogs(TString input_dir, Int_t run_number, Int_t dir_number);
+    Bool_t LoadLogsIntoTree();
 
    private:
     /* AliRoot Objects */
@@ -132,8 +132,10 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     TList* fOutputListOfTrees;  //!
     TList* fOutputListOfHists;  //!
 
-    /* Log trees */
-    TTree* fLogTree;  //!
+    /* External Files */
+    TString fAliEnPath;    //!
+    TTree* fLogTree;       //!
+    Bool_t fIsFirstEvent;  //!
 
     /* Tracks Histograms */
     TH1F* fHist_Tracks_NSigmaProton;  //!

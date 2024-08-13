@@ -27,8 +27,8 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
     gInterpreter->ProcessLine(".include $ALICE_PHYSICS/include");
     gInterpreter->ProcessLine(".include $KFPARTICLE_ROOT/include");
 
-    Bool_t local = kFALSE;    // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
-    Bool_t gridTest = kTRUE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
+    Bool_t local = kFALSE;     // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
+    Bool_t gridTest = kFALSE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
 
     AliAnalysisManager *mgr = new AliAnalysisManager("AnalysisManager_QuickTask");
 
@@ -54,7 +54,7 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
         alienHandler->SetMergeViaJDL(kFALSE);
         // alienHandler->SetMaxMergeStages(1);
         alienHandler->SetGridWorkingDir("work");
-        alienHandler->SetGridOutputDir("output");
+        alienHandler->SetGridOutputDir("quick_task");
         alienHandler->SetJDLName("QuickTask.jdl");
         alienHandler->SetExecutable("QuickTask.sh");
         mgr->SetGridHandler(alienHandler);
@@ -91,7 +91,7 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     gInterpreter->LoadMacro("AliAnalysisQuickTask.cxx++g");
 
-    TString AddQuickTask_Options = Form("(\"%s\", %i)", GRID_DATA_DIR.Data(), GRID_RUN_NUMBER);
+    TString AddQuickTask_Options = "";  // no options yet
     AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(gInterpreter->ExecuteMacro("AddTask_QuickTask.C" + AddQuickTask_Options));
     if (!task) return;
 
@@ -104,7 +104,7 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     if (!local) {
         if (gridTest) {
-            alienHandler->SetNtestFiles(1);
+            alienHandler->SetNtestFiles(2);
             alienHandler->SetRunMode("test");
         } else {
             alienHandler->SetNtestFiles(5);
