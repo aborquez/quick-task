@@ -78,11 +78,15 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     AliAnalysisQuickTask(const char* name);
     virtual ~AliAnalysisQuickTask();
 
+    void Initialize();
     virtual void UserCreateOutputObjects();
-    void PrepareTracksHistograms();
     virtual void UserExec(Option_t* option);
     virtual void Terminate(Option_t* option) { return; }
     virtual Bool_t UserNotify();
+
+    /* Settings -- Stored in the Analysis Manager */
+    void ReweightPt(Bool_t ReweightPt) { fReweightPt = ReweightPt; };
+    void ReweightRadius(Bool_t ReweightRadius) { fReweightRadius = ReweightRadius; };
 
     /* MC Generated */
     void ProcessMCGen();
@@ -117,8 +121,14 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
 
     /* External Files */
     Bool_t LoadLogsIntoTree();
+    void AddPtWeights(TH1D* ptWeights);
+    void AddRadiusWeights(TH1F* radiusWeights);
 
    private:
+    /* Settings ~ Persistent */
+    Bool_t fReweightPt;      //
+    Bool_t fReweightRadius;  //
+
     /* AliRoot Objects */
     AliMCEvent* fMC;                //! MC event
     AliVVertex* fMC_PrimaryVertex;  //! MC gen. (or true) primary vertex
@@ -136,6 +146,8 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     TString fAliEnPath;    //!
     TTree* fLogTree;       //!
     Bool_t fIsFirstEvent;  //!
+    TH1D* fPtWeights;      //
+    TH1F* fRadiusWeights;  //
 
     /* Tracks Histograms */
     TH1F* fHist_Tracks_NSigmaProton;  //!
@@ -145,36 +157,36 @@ class AliAnalysisQuickTask : public AliAnalysisTaskSE {
     TH1F* fHist_AntiLambda_Mass;      //!
 
     /* Containers -- Vectors and Hash Tables */
-    std::unordered_map<Int_t, Int_t> getPdgCode_fromMcIdx;  //
-    std::vector<Int_t> esdIndicesOfAntiProtonTracks;        //
-    std::vector<Int_t> esdIndicesOfPiPlusTracks;            //
+    std::unordered_map<Int_t, Int_t> getPdgCode_fromMcIdx;  //!
+    std::vector<Int_t> esdIndicesOfAntiProtonTracks;        //!
+    std::vector<Int_t> esdIndicesOfPiPlusTracks;            //!
 
     /* Cuts -- Track Selection */
-    Float_t kMin_Track_P;                    //
-    Float_t kMax_Track_P;                    //
-    Float_t kMax_Track_Eta;                  //
-    Float_t kMin_Track_NTPCClusters;         //
-    Float_t kMax_Track_Chi2PerNTPCClusters;  //
+    Float_t kMin_Track_P;                    //!
+    Float_t kMax_Track_P;                    //!
+    Float_t kMax_Track_Eta;                  //!
+    Float_t kMin_Track_NTPCClusters;         //!
+    Float_t kMax_Track_Chi2PerNTPCClusters;  //!
 
     /* Cuts -- V0 Selection */
-    Float_t kMin_V0_Mass;            //
-    Float_t kMax_V0_Mass;            //
-    Float_t kMin_V0_Pt;              //
-    Float_t kMax_V0_Eta;             //
-    Float_t kMin_V0_CPAwrtPV;        //
-    Float_t kMax_V0_CPAwrtPV;        //
-    Float_t kMax_V0_DCAwrtPV;        //
-    Float_t kMax_V0_DCAbtwDau;       //
-    Float_t kMax_V0_DCAnegV0;        //
-    Float_t kMax_V0_DCAposV0;        //
-    Float_t kMax_V0_ArmPtOverAlpha;  //
-    Float_t kMax_V0_Chi2ndf;         //
+    Float_t kMin_V0_Mass;            //!
+    Float_t kMax_V0_Mass;            //!
+    Float_t kMin_V0_Pt;              //!
+    Float_t kMax_V0_Eta;             //!
+    Float_t kMin_V0_CPAwrtPV;        //!
+    Float_t kMax_V0_CPAwrtPV;        //!
+    Float_t kMax_V0_DCAwrtPV;        //!
+    Float_t kMax_V0_DCAbtwDau;       //!
+    Float_t kMax_V0_DCAnegV0;        //!
+    Float_t kMax_V0_DCAposV0;        //!
+    Float_t kMax_V0_ArmPtOverAlpha;  //!
+    Float_t kMax_V0_Chi2ndf;         //!
 
     AliAnalysisQuickTask(const AliAnalysisQuickTask&);             // not implemented
     AliAnalysisQuickTask& operator=(const AliAnalysisQuickTask&);  // not implemented
 
     /// \cond CLASSDEF
-    ClassDef(AliAnalysisQuickTask, 6);
+    ClassDef(AliAnalysisQuickTask, 8);
     /// \endcond
 };
 

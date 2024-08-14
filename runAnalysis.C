@@ -18,7 +18,9 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
     const Bool_t IS_MC = kTRUE;
     const Int_t N_PASS = 3;  // TEST
 
-    TString GRID_DATA_DIR = "/alice/sim/2023/LHC23l1a3/A1.8";
+    Float_t SexaquarkMass = 1.8;
+
+    TString GRID_DATA_DIR = Form("/alice/sim/2023/LHC23l1a3/A%.1f", SexaquarkMass);
     Int_t GRID_RUN_NUMBER = 297595;
     TString GRID_DATA_PATTERN = "/*/AliESDs.root";
 
@@ -27,8 +29,8 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
     gInterpreter->ProcessLine(".include $ALICE_PHYSICS/include");
     gInterpreter->ProcessLine(".include $KFPARTICLE_ROOT/include");
 
-    Bool_t local = kFALSE;     // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
-    Bool_t gridTest = kFALSE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
+    Bool_t local = kFALSE;    // set if you want to run the analysis locally (kTRUE), or on grid (kFALSE)
+    Bool_t gridTest = kTRUE;  // if you run on grid, specify test mode (kTRUE) or full grid model (kFALSE)
 
     AliAnalysisManager *mgr = new AliAnalysisManager("AnalysisManager_QuickTask");
 
@@ -91,7 +93,7 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     gInterpreter->LoadMacro("AliAnalysisQuickTask.cxx++g");
 
-    TString AddQuickTask_Options = "";  // no options yet
+    TString AddQuickTask_Options = Form("(%f, %i, %i)", SexaquarkMass, 1, 1);
     AliAnalysisQuickTask *task = reinterpret_cast<AliAnalysisQuickTask *>(gInterpreter->ExecuteMacro("AddTask_QuickTask.C" + AddQuickTask_Options));
     if (!task) return;
 
@@ -104,7 +106,7 @@ void runAnalysis(Int_t ChooseNEvents = 0) {
 
     if (!local) {
         if (gridTest) {
-            alienHandler->SetNtestFiles(2);
+            alienHandler->SetNtestFiles(1);
             alienHandler->SetRunMode("test");
         } else {
             alienHandler->SetNtestFiles(5);

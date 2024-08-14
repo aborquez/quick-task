@@ -9,7 +9,11 @@ AliAnalysisQuickTask::AliAnalysisQuickTask()
     : AliAnalysisTaskSE(),
       //   fIsMC(0),
       fPDG(),
+      fReweightPt(0),
+      fReweightRadius(0),
       fLogTree(0),
+      fPtWeights(0),
+      fRadiusWeights(0),
       fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
@@ -42,7 +46,11 @@ AliAnalysisQuickTask::AliAnalysisQuickTask(const char* name)
     : AliAnalysisTaskSE(name),
       //   fIsMC(0),
       fPDG(),
+      fReweightPt(0),
+      fReweightRadius(0),
       fLogTree(0),
+      fPtWeights(0),
+      fRadiusWeights(0),
       fOutputListOfTrees(0),
       fOutputListOfHists(0),
       fMC(0),
@@ -79,9 +87,23 @@ AliAnalysisQuickTask::~AliAnalysisQuickTask() {
 }
 
 /*
+ Initialize analysis task.
+*/
+void AliAnalysisQuickTask::Initialize() {
+    AliInfo("Settings:");
+    AliInfo("========");
+    AliInfoF(">> ReweightPt     = %i", (Int_t)fReweightPt);
+    if (fReweightPt) fPtWeights->Print();
+    AliInfoF(">> ReweightRadius = %i", (Int_t)fReweightRadius);
+    if (fReweightRadius) fRadiusWeights->Print();
+}
+
+/*
  Create output objects, called once at RUNTIME ~ execution on Grid
 */
 void AliAnalysisQuickTask::UserCreateOutputObjects() {
+
+    AliInfo("!! Begin !!");
 
     /** Add mandatory routines **/
 
@@ -103,6 +125,8 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     fLogTree = new TTree("Injected", "Injected");
     fOutputListOfTrees->Add(fLogTree);
 
+    PostData(1, fOutputListOfTrees);
+
     /* Histograms */
 
     fOutputListOfHists = new TList();
@@ -123,8 +147,12 @@ void AliAnalysisQuickTask::UserCreateOutputObjects() {
     fHist_AntiLambda_Mass = new TH1F("AntiLambda_Mass", "", 100, 0.5, 1.5);
     fOutputListOfHists->Add(fHist_AntiLambda_Mass);
 
-    PostData(1, fOutputListOfTrees);
+    if (fReweightPt) fOutputListOfHists->Add(fPtWeights);
+    if (fReweightRadius) fOutputListOfHists->Add(fRadiusWeights);
+
     PostData(2, fOutputListOfHists);
+
+    AliInfo("!! End !!");
 }
 
 /*
@@ -713,8 +741,26 @@ Bool_t AliAnalysisQuickTask::LoadLogsIntoTree() {
         fLogTree->Fill();
     }  // end of loop over lines
 
-    AliInfoF("!! Closing file %s ... !!", new_path.Data());
+    AliInfo("!! Closing file ... !!");
     SimLog.close();
 
     return kTRUE;
+}
+
+/*
+  Add pT weights.
+*/
+void AliAnalysisQuickTask::AddPtWeights(TH1D* ptWeights) {
+    fPtWeights = dynamic_cast<TH1D*>(ptWeights->Clone());
+    fPtWeights->Scale(1. / fPtWeights->Integral());
+    fPtWeights->Print();
+}
+
+/*
+ Add radius weights.
+*/
+void AliAnalysisQuickTask::AddRadiusWeights(TH1F* radiusWeights) {
+    fRadiusWeights = dynamic_cast<TH1F*>(radiusWeights->Clone());
+    fRadiusWeights->Scale(1. / fRadiusWeights->Integral());
+    fRadiusWeights->Print();
 }
